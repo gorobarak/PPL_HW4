@@ -50,11 +50,21 @@ export function getAll<K, V>(store: PromisedStore<K, V>, keys: K[]): Promise<V[]
 
 // ??? (you may want to add helper functions here)
 //
+
+
 export function asycMemo<T, R>(f: (param: T) => R): (param: T) => Promise<R> {
     const store = makePromisedStore<T,R>();
-    
-
+    return async (p: T): Promise<R> => {
+        try {
+            await store.get(p);
+        } catch (error) {
+            await store.set(p, f(p));
+        }
+        return store.get(p); //TODO should it we with `await`?
+    }   
 }
+
+
 
 /* 2.3 */
 
