@@ -2,7 +2,7 @@
 
 import chai, { expect } from 'chai';
 
-import { asycMemo,/* asyncWaterfallWithRetry, lazyFilter, lazyMap,*/getAll, makePromisedStore, MISSING_KEY } from '../src/part2';
+import { asycMemo,lazyFilter,/* asyncWaterfallWithRetry,  */lazyMap,getAll, makePromisedStore, MISSING_KEY } from '../src/part2';
 
 import chaiAsPromised from 'chai-as-promised'
 
@@ -41,25 +41,25 @@ describe('2.2 (asycMemo)', () => {
     })
 })
 
-// describe('2.3 (lazy generators)', () => {
-//     function * countTo4(): Generator<number> {
-//         for (let i = 1; i <= 4; i++) {
-//             yield i
-//         }
-//     }
+describe('2.3 (lazy generators)', () => {
+    function * countTo4(): Generator<number> {
+        for (let i = 1; i <= 4; i++) {
+            yield i
+        }
+    }
 
-//     it('filters', async () => {
-//         const gen = lazyFilter(countTo4, (v) => v % 2 == 0)()
+    it('filters', async () => {
+        const gen = lazyFilter(countTo4, (v) => v % 2 == 0)()
 
-//         expect([...gen]).to.deep.equal([2, 4])
-//     })
+        expect([...gen]).to.deep.equal([2, 4])
+    })
 
-//     it('maps', async () => {
-//         const gen = lazyMap(countTo4, (v) => v ** 2)()
+    it('maps', async () => {
+        const gen = lazyMap(countTo4, (v) => v ** 2)()
 
-//         expect([...gen]).to.deep.equal([1, 4, 9, 16])
-//     })
-// })
+        expect([...gen]).to.deep.equal([1, 4, 9, 16])
+    })
+})
 
 // describe('2.4 (asyncWaterfallWithRetry)', () => {
 //     it('executes sequence', async () => {

@@ -60,7 +60,7 @@ export function asycMemo<T, R>(f: (param: T) => R): (param: T) => Promise<R> {
         } catch (error) {
             await store.set(p, f(p));
         }
-        return store.get(p); //TODO should it we with `await`?
+        return store.get(p);
     }   
 }
 
@@ -68,13 +68,23 @@ export function asycMemo<T, R>(f: (param: T) => R): (param: T) => Promise<R> {
 
 /* 2.3 */
 
-// export function lazyFilter<T>(genFn: () => Generator<T>, filterFn: ???): ??? {
-//     ???
-// }
+export function lazyFilter<T>(genFn: () => Generator<T>, filterFn: (p: T)=>Boolean): () => Generator<T>{
+    return function* (): Generator<T> {
+        for (let x of genFn()) {
+            if(filterFn(x)) {
+                yield x;
+            }
+        }
+    } 
+}
 
-// export function lazyMap<T, R>(genFn: () => Generator<T>, mapFn: ???): ??? {
-//     ???
-// }
+export function lazyMap<T, R>(genFn: () => Generator<T>, mapFn: (p:T) =>R): () => Generator<R> {
+    return function* (): Generator<R> {
+        for (let x of genFn()) {
+            yield mapFn(x);
+        }
+    } 
+}
 
 /* 2.4 */
 // you can use 'any' in this question
