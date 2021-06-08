@@ -5,7 +5,7 @@
 // L51 extends L5 with:
 // typed class construct
 
-import { concat, chain, join, map, zipWith } from "ramda";
+import { concat, chain, join, map, zipWith, reduce } from "ramda";
 import { Sexp, Token } from 's-expression';
 import { isCompoundSExp, isEmptySExp, isSymbolSExp, makeCompoundSExp, makeEmptySExp, makeSymbolSExp, SExpValue, valueToString } from '../imp/L5-value';
 import { allT, first, rest, second, isEmpty } from '../shared/list';
@@ -44,7 +44,7 @@ import { makeClassTExp, ClassTExp } from "./TExp51";
 //         |  ( let ( <binding>* ) <cexp>+ )  / LetExp(bindings:Binding[], body:CExp[]))
 //         |  ( letrec ( binding*) <cexp>+ )  / LetrecExp(bindings:Bindings[], body: CExp)
 //         |  ( set! <var> <cexp>)            / SetExp(var: varRef, val: CExp)
-//         |  ( class [: <typeVar>]? ( <var>+ ) ( <binding>+ ) ClassExp(typeName: TVar, args:VarDecl[],bindings:Binding[])) //L51
+//         |  ( class [: <typeVar>]? ( <var>+ ) ( <binding>+ ) / ClassExp(typeName: TVar, args:VarDecl[],bindings:Binding[])) //L51
 // <binding>  ::= ( <var-decl> <cexp> )            / Binding(var:VarDecl, val:Cexp)
 // <prim-op>  ::= + | - | * | / | < | > | = | not |  eq? | string=?
 //                  | cons | car | cdr | list? | number?
@@ -335,8 +335,17 @@ const parseClassExp = (params: Sexp[]): Result<ClassExp> =>
     (params.length != 4) || (params[0] != ':') ? makeFailure(`class must have shape (class [: <type>]? <fields> <methods>) - got ${params.length} params instead`) :
     parseGoodClassExp(params[1], params[2], params[3]);
 
-const parseGoodClassExp = (typeName: Sexp, varDecls: Sexp, bindings: Sexp): Result<ClassExp> =>
-    makeFailure("TODO parseGoodClassExp");
+const parseGoodClassExp = (typeName: Sexp, varDecls: Sexp, bindings: Sexp): Result<ClassExp> =>{
+
+    if (isGoodBindings(bindings) && isArray(varDecls)){
+        const BindingsResult = parseBindings(bindings)
+        const var_dcls_result = mapResult((vd: Sexp)=> parseVarDecl(vd), varDecls)
+        const Tvar = bind(parseTExp(typeName), _ => isString(typeName) ? makeOk(makeTVar(typeName)): makeFailure<TVar>(""))
+        return safe3((tvar: TVar,fields: VarDecl[],mthds: Binding[]) => makeOk(makeClassExp(tvar, fields, mthds)))(Tvar, var_dcls_result, BindingsResult)
+    }
+    else return makeFailure(`Class not in right form type: ${typeName}`)
+}
+
 
 // sexps has the shape (quote <sexp>)
 export const parseLitExp = (param: Sexp): Result<LitExp> =>
@@ -449,9 +458,70 @@ const unparseClassExp = (ce: ClassExp, unparseWithTVars?: boolean): Result<strin
 // Collect class expressions in parsed AST so that they can be passed to the type inference module
 
 export const parsedToClassExps = (p: Parsed): ClassExp[] => 
-    // TODO parsedToClassExps
-    [];
+    isProgram(p) ? parseToClassExps_Program(p, []) : parseToClassExps_Exp(p, [])
 
+export const parseToClassExps_Program = (program: Program, classes: ClassExp[]): ClassExp[]=> {
+    const exps = program.exps
+    if (exps.length === 1){
+        return parseToClassExps_Exp(exps[0], classes)
+    }
+    else{
+        return parseToClassExps_Program(makeProgram(rest(exps)), parseToClassExps_Exp(exps[0], classes))
+    }
+}
+export const parseToClassExps_Exp = (exp: Exp, classes: ClassExp[]): ClassExp[] => 
+    isNumExp(exp) ? classes :
+    isBoolExp(exp) ? classes :
+    isStrExp(exp) ? classes :
+    isPrimOp(exp) ? classes :
+    isVarRef(exp) ? classes :
+    isIfExp(exp) ? parseToClassExps_IfExp(exp, classes) :
+    isProcExp(exp) ? parseToClassExps_ProcExp(exp, classes) :
+    isAppExp(exp) ?  parseToClassExps_AppExp(exp, classes):
+    isLetExp(exp) ?  parseToClassExps_LetExp(exp, classes):
+    isLetrecExp(exp) ?  parseToClassExps_LetrecExp(exp, classes): 
+    isDefineExp(exp) ?  parseToClassExps_DefineExp(exp, classes):
+    isClassExp(exp) ?  concat(classes, [exp]): 
+    isLitExp(exp) ?  classes:
+    isSetExp(exp) ?  classes: //TODO check at the end if need to imp func
+    exp;
+ 
+export const reduceClassesArrayOfArrays = (arrOfarrs: ClassExp[][]):ClassExp[] => {
+    return reduce((acc: ClassExp[], curr: ClassExp[]) => concat(acc, curr), [], arrOfarrs)
+}
+
+export const parseToClassExps_IfExp = (ifexp: IfExp, classes: ClassExp[]): ClassExp[] => {
+    return concat(concat(concat(classes, parseToClassExps_Exp(ifexp.test, [])), parseToClassExps_Exp(ifexp.then, [])), parseToClassExps_Exp(ifexp.alt, []))
+}
+
+export const parseToClassExps_ProcExp = (proc: ProcExp, classes: ClassExp[]): ClassExp[] => {
+    const body_classes = map((exp: Exp) => parseToClassExps_Exp(exp,[]), proc.body);
+    return concat(classes, reduceClassesArrayOfArrays(body_classes))
+}
+
+export const parseToClassExps_AppExp = (app: AppExp, classes: ClassExp[]): ClassExp[] => {
+    const rands_classes = map((exp: Exp)=> parseToClassExps_Exp(exp, []), app.rands);
+    const rator_classes = parseToClassExps_Exp(app.rator, []);
+    const app_classes = concat(rator_classes, reduceClassesArrayOfArrays(rands_classes));
+    return concat(classes, app_classes)
+}
+
+export const parseToClassExps_LetExp = (letexp: LetExp, classes: ClassExp[]): ClassExp[] => {
+    const bindings_classes = map((bd: Binding) => parseToClassExps_Exp(bd.val, []), letexp.bindings);
+    const body_classes = map((exp: Exp) => parseToClassExps_Exp(exp, []), letexp.body);
+    const let_classes = concat(reduceClassesArrayOfArrays(bindings_classes), reduceClassesArrayOfArrays(body_classes))
+    return concat(classes, let_classes)
+}
+
+const parseToClassExps_LetrecExp = (letrec: LetrecExp, classes: ClassExp[]): ClassExp[] => {
+    const bindings_classes = map((bd: Binding) => parseToClassExps_Exp(bd.val, []), letrec.bindings);
+    const body_classes = map((exp: Exp) => parseToClassExps_Exp(exp, []), letrec.body);
+    const letrec_classes = concat(reduceClassesArrayOfArrays(bindings_classes), reduceClassesArrayOfArrays(body_classes))
+    return concat(classes, letrec_classes)
+}
+const parseToClassExps_DefineExp = (define: DefineExp, classes: ClassExp[]): ClassExp[] => {
+    return concat(classes, parseToClassExps_Exp(define.val, []))
+}
 // L51 
 export const classExpToClassTExp = (ce: ClassExp): ClassTExp => 
     makeClassTExp(ce.typeName.var, map((binding: Binding) => [binding.var.var, binding.var.texp], ce.methods));

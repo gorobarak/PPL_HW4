@@ -102,8 +102,11 @@ const checkNoOccurrence = (tvar: T.TVar, te: T.TExp, exp: A.Exp): Result<true> =
 // so that the user defined types are known to the type inference system.
 // For each class (class : typename ...) add a pair <class.typename classTExp> to TEnv
 export const makeTEnvFromClasses = (parsed: A.Parsed): E.TEnv => {
-    // TODO makeTEnvFromClasses
-    return E.makeEmptyTEnv();
+    const empty_env = E.makeEmptyTEnv();
+    const classes = A.parsedToClassExps(parsed);
+    const classes_types = R.map((classExp: A.ClassExp) => A.classExpToClassTExp(classExp) , classes);
+    const Tvars = R.map((classExp: A.ClassExp) => classExp.typeName.var , classes);
+    return E.makeExtendTEnv(Tvars, classes_types, empty_env)
 }
 
 // Purpose: Compute the type of a concrete expression
@@ -240,8 +243,7 @@ export const typeofLetrec = (exp: A.LetrecExp, tenv: E.TEnv): Result<T.TExp> => 
 //   (define (var : texp) val)
 // TODO - write the typing rule for define-exp
 export const typeofDefine = (exp: A.DefineExp, tenv: E.TEnv): Result<T.VoidTExp> => {
-    const tvar = exp.var.texp
-    const extTEnv = E.makeExtendTEnv([exp.var.var], [exp.var.texp], tenv) //TODO with or without extTenv?
+    const extTEnv = E.makeExtendTEnv([exp.var.var], [exp.var.texp], tenv) 
     const constraint = bind(typeofExp(exp.val, extTEnv), (tval: T.TExp ) => checkEqualType(exp.var.texp, tval, exp))
     return bind(constraint, _ => makeOk(T.makeVoidTExp()))
 };
@@ -290,5 +292,18 @@ export const typeofSet = (exp: A.SetExp, tenv: E.TEnv): Result<T.VoidTExp> => {
 //      type<method_k>(class-tenv) = mk
 // Then type<class(type fields methods)>(tend) = = [t1 * ... * tn -> type]
 export const typeofClass = (exp: A.ClassExp, tenv: E.TEnv): Result<T.TExp> => {
-    return makeFailure("TODO typeofClass");
+    const variables = R.map((vd: A.VarDecl) => vd.var, exp.fields)
+    const variables_types = R.map((vd: A.VarDecl) => vd.texp, exp.fields)
+    const extTenv = E.makeExtendTEnv(variables, variables_types, tenv)
+
+
+    const mthds_names = R.map((b) => b.var.var, exp.methods);
+    const mthds_name_TE = R.map((b) => b.var.texp, exp.methods);
+    const mthds = R.map((b) => b.val, exp.methods);
+    const constraints = zipWithResult((mthd_name_TE, mthd) => bind(typeofExp(mthd, extTenv),
+                                                           (mthd_TE: T.TExp) => checkEqualType(mthd_name_TE, mthd_TE, exp)),
+                                      mthds_name_TE, mthds);
+    const classTExp = T.makeClassTExp(exp.typeName.var, R.zip(mthds_names, mthds_name_TE) )
+    return bind(constraints, _ => makeOk(T.makeProcTExp(variables_types, classTExp)))
+    
 };
